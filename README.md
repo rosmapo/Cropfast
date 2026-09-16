@@ -75,13 +75,9 @@ order/field.
    mkdir -p ~/.local/bin
    cp cropfast.py ~/.local/bin/cropfast
    chmod +x ~/.local/bin/cropfast
-2. Edit `cropfast.desktop`: adjust `Exec=` to match where you installed it, and
-   change `application_id` in `cropfast.py` (in `CropApplication.__init__`) to
-   your own reverse-domain ID, e.g. `io.github.rosmapo.Cropfast`.
+2. Edit `cropfast.desktop`: adjust `Exec=` to match where you installed it.
 3. Install the desktop entry:
-   ```bash
    cp cropfast.desktop ~/.local/share/applications/
-   ```
 
 Crop should now appear in your application menu and as the default handler
 you can pick for image files.
