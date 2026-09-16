@@ -11,6 +11,8 @@ GTK4 / PyGObject. Designed to quickly crop a whole folder of photos to a
 fixed aspect ratio (3:2, 4:3, 16:9, ...), one image after another, without
 touching a mouse-driven menu for every file.
 
+![Screenshot](images/screenshot.png)
+
 ## Features
 
 - Crop to a preset aspect ratio, or freehand
