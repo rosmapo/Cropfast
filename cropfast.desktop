@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Crop
+Name=CropFast
 GenericName=Image Cropper
 Comment=Fast image cropping tool with aspect-ratio presets
-# Adjust this path to wherever you actually install crop.py,
-# e.g. /usr/local/bin/crop or ~/.local/bin/crop
+# Adjust this path to wherever you actually install cropfast.py,
+# e.g. /usr/local/bin/cropfast or ~/.local/bin/cropfast
 Exec=cropfast %f
 Icon=image-x-generic
 Terminal=false

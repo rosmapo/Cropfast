@@ -17,11 +17,13 @@ touching a mouse-driven menu for every file.
 - Portrait / Landscape / Adaptive (auto-orients to each image) modes
 - Batch-friendly: right-click crops and jumps to the next image
 - Rule-of-thirds grid while adjusting a selection
-- Remembers your output folder, default input folder, ratio presets and
-  sorting preferences between runs
-- No personal paths hard-coded — output/input defaults are resolved via
-  your system's XDG user directories (`Downloads`, `Pictures`), whatever
-  they're actually named on your system/language
+- Remembers your output folder, ratio presets and sorting preferences
+  between runs
+- No personal paths hard-coded — the output folder default is resolved
+  via your system's XDG user directories (`Downloads`), whatever it's
+  actually named on your system/language. The input folder has no
+  default at all: until you set one in Settings, the app just asks each
+  time you open it
 
 ## Requirements
 
@@ -70,10 +72,10 @@ The same list is available in-app via the **?** (About) button.
 
 ## Configuration
 
-Settings are stored in `~/.config/cropfast/config.cfg` and can be edited either
-by hand or through the in-app **Settings** button (gear icon): output
-folder, default input folder, ratio presets, startup mode, and sort
-order/field.
+Settings are stored in `~/.config/cropfast/config.cfg` and can be edited
+either by hand or through the in-app **Settings** button (gear icon):
+output folder, default input folder, ratio presets, startup mode, and
+sort order/field.
 
 ## Installing as a desktop app (optional)
 
@@ -85,8 +87,8 @@ order/field.
 3. Install the desktop entry:
    cp cropfast.desktop ~/.local/share/applications/
 
-Crop should now appear in your application menu and as the default handler
-you can pick for image files.
+CropFast should now appear in your application menu and as the default
+handler you can pick for image files.
 
 ## License
 

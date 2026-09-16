@@ -12,7 +12,7 @@ IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
 APP_VERSION = "1.0.0"
 
 # --- Configuration ---
-CONFIG_DIR = Path.home() / ".config/crop"
+CONFIG_DIR = Path.home() / ".config/cropfast"
 CONFIG_FILE = CONFIG_DIR / "config.cfg"
 
 def _xdg_user_dir(special_dir, fallback_name):
@@ -256,7 +256,7 @@ class SettingsDialog(Gtk.Window):
 
 class CropApp(Gtk.ApplicationWindow):
     def __init__(self, app, initial_path=None):
-        super().__init__(application=app, title="Crop")
+        super().__init__(application=app, title="CropFast")
         self.config = load_config()
 
         self.files = []
@@ -597,7 +597,7 @@ class CropApp(Gtk.ApplicationWindow):
 
     # --- About / keyboard shortcuts ---
     def _open_about(self):
-        dialog = Gtk.Window(transient_for=self, modal=True, title="About Crop")
+        dialog = Gtk.Window(transient_for=self, modal=True, title="About CropFast")
         dialog.set_default_size(420, 0)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_top(20)
@@ -606,7 +606,7 @@ class CropApp(Gtk.ApplicationWindow):
         box.set_margin_end(20)
         dialog.set_child(box)
 
-        title_label = Gtk.Label(label=f"<b>Cropfast</b>  v{APP_VERSION}", use_markup=True)
+        title_label = Gtk.Label(label=f"<b>CropFast</b>  v{APP_VERSION}", use_markup=True)
         title_label.set_xalign(0.0)
         box.append(title_label)
 
@@ -893,7 +893,7 @@ class CropApp(Gtk.ApplicationWindow):
             return
 
         self.image_path = self.files[self.current_index]
-        self.set_title(f"Crop – {self.image_path.name} ({self.current_index + 1}/{len(self.files)})")
+        self.set_title(f"CropFast – {self.image_path.name} ({self.current_index + 1}/{len(self.files)})")
 
         try:
             self.orig_pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(self.image_path))
@@ -1452,9 +1452,9 @@ class CropApp(Gtk.ApplicationWindow):
 class CropApplication(Gtk.Application):
     def __init__(self, initial_path=None):
         # NOTE: change this to your own reverse-domain ID before publishing,
-        # e.g. "io.github.<your-username>.Crop" — it must match the
+        # e.g. "io.github.<your-username>.CropFast" — it must match the
         # "Exec"/filename used in the .desktop file for desktop integration.
-        super().__init__(application_id="io.github.rosmapo.Cropfast")
+        super().__init__(application_id="io.github.example.CropFast")
         self.initial_path = initial_path
 
     def do_activate(self):
