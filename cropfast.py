@@ -41,7 +41,7 @@ DEFAULT_CONFIG = {
         'default_input_folder': ''
     },
     'Crop': {
-        'ratios': '3:2, 4:3, 16:9, 1:1, 5:4, 14:3, 17:24',
+        'ratios': '3:2, 4:3, 16:9, 1:1, 5:4',
         'current_ratio': '3:2',
         'startup_mode': 'auto'   # portrait / landscape / auto / freehand
     },
