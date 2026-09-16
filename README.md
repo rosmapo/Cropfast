@@ -1,5 +1,9 @@
 # Cropfast
 
+If you like this project and want to support its development:
+
+[![Buy Me a Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/mirosmar)
+
 A fast, keyboard-and-mouse-driven image cropping tool for Linux, built with
 GTK4 / PyGObject. Designed to quickly crop a whole folder of photos to a
 fixed aspect ratio (3:2, 4:3, 16:9, ...), one image after another, without
