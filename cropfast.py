@@ -1458,6 +1458,9 @@ class CropApplication(Gtk.Application):
         self.initial_path = initial_path
 
     def do_activate(self):
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            settings.set_property("gtk-application-prefer-dark-theme", True)
         win = CropApp(self, initial_path=self.initial_path)
         win.present()
 
