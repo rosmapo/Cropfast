@@ -6,7 +6,8 @@ from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
+gi.require_version("Adw", "1")
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Adw, Gio
 
 IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
 APP_VERSION = "1.0.0"
@@ -92,169 +93,167 @@ def parse_ratio(ratio_str):
         return None
 
 
-class SettingsDialog(Gtk.Window):
-    """Simple settings window: output/input folders, ratio list,
-    startup mode and file sorting."""
+class SettingsDialog(Adw.PreferencesDialog):
+    """Preferences: output/input folders, ratio list, startup mode and
+    file sorting. Follows the standard libadwaita pattern — every row
+    applies (and saves) as soon as it's changed, there's no separate
+    Save/Cancel step."""
 
     def __init__(self, parent):
-        super().__init__(transient_for=parent, modal=True, title="Settings")
+        super().__init__(title="Settings")
         self.parent_app = parent
-        self.set_default_size(480, 0)
+        self._active_chooser = None
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        outer.set_margin_top(16)
-        outer.set_margin_bottom(16)
-        outer.set_margin_start(16)
-        outer.set_margin_end(16)
-        self.set_child(outer)
+        page = Adw.PreferencesPage()
+        self.add(page)
 
-        grid = Gtk.Grid(row_spacing=8, column_spacing=8)
-        outer.append(grid)
-        row = 0
+        # --- Paths ---
+        group_paths = Adw.PreferencesGroup(title="Paths")
+        page.add(group_paths)
 
-        # Output folder
-        grid.attach(Gtk.Label(label="Output folder:", halign=Gtk.Align.START), 0, row, 1, 1)
-        self.entry_output = Gtk.Entry(hexpand=True)
-        self.entry_output.set_text(parent.config.get('Paths', 'output_folder', fallback=''))
-        grid.attach(self.entry_output, 1, row, 1, 1)
-        btn_out = Gtk.Button(label="Browse…")
-        btn_out.connect("clicked", lambda b: self._browse_folder(self.entry_output))
-        grid.attach(btn_out, 2, row, 1, 1)
-        row += 1
+        self.row_output = Adw.EntryRow(title="Output folder")
+        self.row_output.set_text(parent.config.get('Paths', 'output_folder', fallback=''))
+        self.row_output.connect("apply", self._on_output_apply)
+        btn_out = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER)
+        btn_out.add_css_class("flat")
+        btn_out.set_tooltip_text("Browse…")
+        btn_out.connect("clicked", lambda b: self._browse_folder(self.row_output, self._on_output_apply))
+        self.row_output.add_suffix(btn_out)
+        group_paths.add(self.row_output)
 
-        # Default input folder
-        grid.attach(Gtk.Label(label="Default input folder:", halign=Gtk.Align.START), 0, row, 1, 1)
-        self.entry_input = Gtk.Entry(hexpand=True)
-        self.entry_input.set_placeholder_text("Not set — the app will ask each time")
-        self.entry_input.set_text(parent.config.get('Paths', 'default_input_folder', fallback=''))
-        grid.attach(self.entry_input, 1, row, 1, 1)
-        btn_in = Gtk.Button(label="Browse…")
-        btn_in.connect("clicked", lambda b: self._browse_folder(self.entry_input))
-        grid.attach(btn_in, 2, row, 1, 1)
-        row += 1
+        self.row_input = Adw.EntryRow(title="Default input folder (optional — asks each time if empty)")
+        self.row_input.set_text(parent.config.get('Paths', 'default_input_folder', fallback=''))
+        self.row_input.connect("apply", self._on_input_apply)
+        btn_in = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER)
+        btn_in.add_css_class("flat")
+        btn_in.set_tooltip_text("Browse…")
+        btn_in.connect("clicked", lambda b: self._browse_folder(self.row_input, self._on_input_apply))
+        self.row_input.add_suffix(btn_in)
+        group_paths.add(self.row_input)
 
-        # Crop ratios
-        grid.attach(Gtk.Label(label="Ratios (comma-separated):", halign=Gtk.Align.START), 0, row, 1, 1)
-        self.entry_ratios = Gtk.Entry(hexpand=True)
-        self.entry_ratios.set_text(parent.config.get('Crop', 'ratios', fallback=''))
-        grid.attach(self.entry_ratios, 1, row, 2, 1)
-        row += 1
+        # --- Crop ---
+        group_crop = Adw.PreferencesGroup(title="Crop")
+        page.add(group_crop)
 
-        # Startup mode
-        grid.attach(Gtk.Label(label="Startup mode:", halign=Gtk.Align.START), 0, row, 1, 1)
+        self.row_ratios = Adw.EntryRow(title="Ratios (comma-separated)")
+        self.row_ratios.set_text(parent.config.get('Crop', 'ratios', fallback=''))
+        self.row_ratios.connect("apply", self._on_ratios_apply)
+        group_crop.add(self.row_ratios)
+
         modes = ['portrait', 'landscape', 'auto', 'freehand']
         mode_labels = ['Portrait', 'Landscape', 'Adaptive', 'Freehand']
-        self.combo_startup = Gtk.DropDown(model=Gtk.StringList.new(mode_labels))
+        self.row_startup = Adw.ComboRow(title="Startup mode", model=Gtk.StringList.new(mode_labels))
         current_mode = parent.config.get('Crop', 'startup_mode', fallback='auto').strip().lower()
-        self.combo_startup.set_selected(modes.index(current_mode) if current_mode in modes else modes.index('auto'))
-        grid.attach(self.combo_startup, 1, row, 2, 1)
-        row += 1
+        self.row_startup.set_selected(modes.index(current_mode) if current_mode in modes else modes.index('auto'))
+        self.row_startup.connect("notify::selected", self._on_startup_changed)
+        group_crop.add(self.row_startup)
 
-        # Sort by
-        grid.attach(Gtk.Label(label="Sort images by:", halign=Gtk.Align.START), 0, row, 1, 1)
+        # --- Sorting ---
+        group_sort = Adw.PreferencesGroup(title="Sorting")
+        page.add(group_sort)
+
         sort_opts = ['date', 'name']
-        self.combo_sort_by = Gtk.DropDown(model=Gtk.StringList.new(sort_opts))
+        sort_labels = ['Date', 'Name']
+        self.row_sort_by = Adw.ComboRow(title="Sort images by", model=Gtk.StringList.new(sort_labels))
         cur_sort_by = parent.config.get('Sorting', 'sort_by', fallback='name').strip().lower()
-        self.combo_sort_by.set_selected(sort_opts.index(cur_sort_by) if cur_sort_by in sort_opts else sort_opts.index('name'))
-        grid.attach(self.combo_sort_by, 1, row, 2, 1)
-        row += 1
+        self.row_sort_by.set_selected(sort_opts.index(cur_sort_by) if cur_sort_by in sort_opts else sort_opts.index('name'))
+        self.row_sort_by.connect("notify::selected", self._on_sort_by_changed)
+        group_sort.add(self.row_sort_by)
 
-        # Sort order
-        grid.attach(Gtk.Label(label="Sort order:", halign=Gtk.Align.START), 0, row, 1, 1)
         order_opts = ['ascending', 'descending']
-        self.combo_sort_order = Gtk.DropDown(model=Gtk.StringList.new(order_opts))
+        order_labels = ['Ascending', 'Descending']
+        self.row_sort_order = Adw.ComboRow(title="Sort order", model=Gtk.StringList.new(order_labels))
         cur_order = parent.config.get('Sorting', 'sort_order', fallback='ascending').strip().lower()
-        self.combo_sort_order.set_selected(order_opts.index(cur_order) if cur_order in order_opts else order_opts.index('ascending'))
-        grid.attach(self.combo_sort_order, 1, row, 2, 1)
-        row += 1
+        self.row_sort_order.set_selected(order_opts.index(cur_order) if cur_order in order_opts else order_opts.index('ascending'))
+        self.row_sort_order.connect("notify::selected", self._on_sort_order_changed)
+        group_sort.add(self.row_sort_order)
 
-        # Buttons
-        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        btn_box.set_halign(Gtk.Align.END)
-        outer.append(btn_box)
-
-        btn_cancel = Gtk.Button(label="Cancel")
-        btn_cancel.connect("clicked", lambda b: self.close())
-        btn_box.append(btn_cancel)
-
-        btn_save = Gtk.Button(label="Save")
-        btn_save.add_css_class("suggested-action")
-        btn_save.connect("clicked", self._on_save)
-        btn_box.append(btn_save)
-
-    def _browse_folder(self, entry):
+    def _browse_folder(self, row, on_chosen):
         chooser = Gtk.FileChooserNative.new(
-            "Select Folder", self, Gtk.FileChooserAction.SELECT_FOLDER, "Select", "Cancel")
-        chooser.connect("response", self._on_folder_chosen, entry)
+            "Select Folder", self.parent_app, Gtk.FileChooserAction.SELECT_FOLDER, "Select", "Cancel")
+        chooser.connect("response", self._on_folder_chosen, row, on_chosen)
         self._active_chooser = chooser
         chooser.show()
 
-    def _on_folder_chosen(self, chooser, response, entry):
+    def _on_folder_chosen(self, chooser, response, row, on_chosen):
         if response == Gtk.ResponseType.ACCEPT:
             gfile = chooser.get_file()
             if gfile and gfile.get_path():
-                entry.set_text(gfile.get_path())
+                row.set_text(gfile.get_path())
+                on_chosen(row)
         self._active_chooser = None
 
-    def _on_save(self, button):
+    def _on_output_apply(self, row):
         cfg = self.parent_app.config
+        text = row.get_text().strip()
+        if not text:
+            # An empty output folder isn't meaningful — restore the previous value
+            row.set_text(cfg.get('Paths', 'output_folder', fallback=''))
+            return
+        cfg['Paths']['output_folder'] = text
+        save_config(cfg)
 
-        ratios_text = self.entry_ratios.get_text().strip()
-        new_ratios = None
-        if ratios_text:
-            raw_items = [r.strip() for r in ratios_text.split(',') if r.strip()]
-            valid_items, invalid_items, seen = [], [], set()
-            for item in raw_items:
-                parsed = parse_ratio(item)
-                if parsed is None:
-                    invalid_items.append(item)
-                    continue
-                w, h = parsed
-                clean = f"{int(w) if w.is_integer() else w}:{int(h) if h.is_integer() else h}"
-                if clean not in seen:
-                    seen.add(clean)
-                    valid_items.append(clean)
-
-            if not valid_items:
-                self.parent_app._show_message_dialog(
-                    "Invalid Ratios",
-                    "None of the entered ratios are valid (expected format like "
-                    "\u201c3:2\u201d). Fix the list before saving.",
-                    is_error=True
-                )
-                return  # keep the dialog open so the user can fix it
-
-            new_ratios = ', '.join(valid_items)
-            self.entry_ratios.set_text(new_ratios)
-            if invalid_items:
-                self.parent_app._show_message_dialog(
-                    "Some Ratios Ignored",
-                    "These entries weren't valid and were skipped:\n" + ", ".join(invalid_items)
-                )
-
-        cfg['Paths']['output_folder'] = self.entry_output.get_text().strip() or cfg['Paths']['output_folder']
+    def _on_input_apply(self, row):
+        cfg = self.parent_app.config
         # Unlike output_folder, an empty value here is valid and meaningful
-        # (it means "not set yet" — the app keeps asking), so it's saved
-        # as-is rather than falling back to the previous value.
-        cfg['Paths']['default_input_folder'] = self.entry_input.get_text().strip()
-        if new_ratios:
-            cfg['Crop']['ratios'] = new_ratios
+        # (it means "not set yet" — the app keeps asking).
+        cfg['Paths']['default_input_folder'] = row.get_text().strip()
+        save_config(cfg)
 
-        modes = ['portrait', 'landscape', 'auto', 'freehand']
-        cfg['Crop']['startup_mode'] = modes[self.combo_startup.get_selected()]
+    def _on_ratios_apply(self, row):
+        cfg = self.parent_app.config
+        text = row.get_text().strip()
+        if not text:
+            row.set_text(cfg.get('Crop', 'ratios', fallback=''))
+            return
 
-        sort_opts = ['date', 'name']
-        cfg['Sorting']['sort_by'] = sort_opts[self.combo_sort_by.get_selected()]
+        raw_items = [r.strip() for r in text.split(',') if r.strip()]
+        valid_items, invalid_items, seen = [], [], set()
+        for item in raw_items:
+            parsed = parse_ratio(item)
+            if parsed is None:
+                invalid_items.append(item)
+                continue
+            w, h = parsed
+            clean = f"{int(w) if w.is_integer() else w}:{int(h) if h.is_integer() else h}"
+            if clean not in seen:
+                seen.add(clean)
+                valid_items.append(clean)
 
-        order_opts = ['ascending', 'descending']
-        cfg['Sorting']['sort_order'] = order_opts[self.combo_sort_order.get_selected()]
+        if not valid_items:
+            self.add_toast(Adw.Toast(title="No valid ratios entered — keeping the previous list", timeout=3))
+            row.set_text(cfg.get('Crop', 'ratios', fallback=''))
+            return
 
+        new_ratios = ', '.join(valid_items)
+        row.set_text(new_ratios)
+        cfg['Crop']['ratios'] = new_ratios
         save_config(cfg)
         self.parent_app.refresh_ratio_list()
-        self.close()
+
+        if invalid_items:
+            self.add_toast(Adw.Toast(title="Skipped invalid entries: " + ", ".join(invalid_items), timeout=4))
+
+    def _on_startup_changed(self, row, param):
+        modes = ['portrait', 'landscape', 'auto', 'freehand']
+        cfg = self.parent_app.config
+        cfg['Crop']['startup_mode'] = modes[row.get_selected()]
+        save_config(cfg)
+
+    def _on_sort_by_changed(self, row, param):
+        sort_opts = ['date', 'name']
+        cfg = self.parent_app.config
+        cfg['Sorting']['sort_by'] = sort_opts[row.get_selected()]
+        save_config(cfg)
+
+    def _on_sort_order_changed(self, row, param):
+        order_opts = ['ascending', 'descending']
+        cfg = self.parent_app.config
+        cfg['Sorting']['sort_order'] = order_opts[row.get_selected()]
+        save_config(cfg)
 
 
-class CropApp(Gtk.ApplicationWindow):
+class CropApp(Adw.ApplicationWindow):
     def __init__(self, app, initial_path=None):
         super().__init__(application=app, title="CropFast")
         self.config = load_config()
@@ -287,23 +286,41 @@ class CropApp(Gtk.ApplicationWindow):
         self.current_ratio_str = self.config.get('Crop', 'current_ratio', fallback='3:2')
         self.startup_mode = self.config.get('Crop', 'startup_mode', fallback='auto').strip().lower()
 
-        # Build the GUI
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.set_child(main_box)
+        # --- Window actions (reachable from the primary menu) ---
+        for name, cb in (
+            ("settings", lambda a, p: self._open_settings()),
+            ("shortcuts", lambda a, p: self._open_shortcuts()),
+            ("about", lambda a, p: self._open_about()),
+        ):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", cb)
+            self.add_action(action)
 
-        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        toolbar.set_margin_start(8)
-        toolbar.set_margin_end(8)
-        toolbar.set_margin_top(6)
-        toolbar.set_margin_bottom(6)
-        main_box.append(toolbar)
+        # --- Layout: Adw.ToolbarView = header bar + content. Everything
+        # (open/nav/ratio/mode on the left, size/crop/menu on the right)
+        # lives in the single top header bar — no separate bottom bar.
+        toolbar_view = Adw.ToolbarView()
+        self.set_content(toolbar_view)
 
-        # Open button (first in the toolbar) – pick an image or a folder.
-        # A tiny popover (not a full dialog window) lets you choose which,
-        # since GTK has no single dialog mode that reliably selects both.
+        header = Adw.HeaderBar()
+        toolbar_view.add_top_bar(header)
+
+        # No title/subtitle shown in the header bar itself — there's no
+        # room for it anyway with this many controls. An empty widget
+        # overrides the header bar's default title display. The window's
+        # own :title property (used by the OS taskbar / window switcher)
+        # is still kept up to date in load_current_image().
+        header.set_title_widget(Gtk.Box())
+
+        # --- Start side: Open, navigation, ratio, mode ---
+        start_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        # Open button – pick an image or a folder. A tiny popover (not a
+        # full dialog window) lets you choose which, since GTK has no
+        # single dialog mode that reliably selects both.
         self.btn_open = Gtk.MenuButton(label="Open")
         self.btn_open.set_tooltip_text("Open an image or a folder of images (Ctrl+O)")
-        toolbar.append(self.btn_open)
+        start_box.append(self.btn_open)
 
         self.open_popover = Gtk.Popover()
         open_popover_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -324,20 +341,23 @@ class CropApp(Gtk.ApplicationWindow):
         btn_open_folder.connect("clicked", lambda b: (self.open_popover.popdown(), self._open_file_chooser('folder')))
         open_popover_box.append(btn_open_folder)
 
-        toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        start_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
 
         # Navigation buttons
+        nav_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        nav_box.add_css_class("linked")
         btn_prev = Gtk.Button.new_from_icon_name("go-previous-symbolic")
         btn_prev.set_tooltip_text("Previous image (Left arrow)")
         btn_prev.connect("clicked", lambda b: self.navigate_image(-1))
-        toolbar.append(btn_prev)
+        nav_box.append(btn_prev)
 
         btn_next = Gtk.Button.new_from_icon_name("go-next-symbolic")
         btn_next.set_tooltip_text("Next image (Right arrow)")
         btn_next.connect("clicked", lambda b: self.navigate_image(1))
-        toolbar.append(btn_next)
+        nav_box.append(btn_next)
+        start_box.append(nav_box)
 
-        toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        start_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
 
         # Ratio dropdown
         ratios_list = [r.strip() for r in self.config.get('Crop', 'ratios', fallback='3:2, 4:3, 16:9').split(',') if r.strip()]
@@ -351,32 +371,37 @@ class CropApp(Gtk.ApplicationWindow):
             self.combo_ratio.set_selected(0)
 
         self.combo_ratio.connect("notify::selected", self.on_ratio_combo_changed)
-        toolbar.append(self.combo_ratio)
+        start_box.append(self.combo_ratio)
 
-        toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        start_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
 
-        # Mode buttons (mutually exclusive, active one is highlighted)
+        # Mode buttons (mutually exclusive, active one is highlighted) —
+        # grouped visually as a segmented control.
+        mode_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        mode_box.add_css_class("linked")
+        start_box.append(mode_box)
+
         self.btn_portrait = Gtk.Button(label="Portrait")
         self.btn_portrait.set_tooltip_text("Portrait mode – selection in portrait orientation")
         self.btn_portrait.connect("clicked", lambda b: self.set_mode('portrait'))
-        toolbar.append(self.btn_portrait)
+        mode_box.append(self.btn_portrait)
 
         self.btn_landscape = Gtk.Button(label="Landscape")
         self.btn_landscape.set_tooltip_text("Landscape mode – selection in landscape orientation")
         self.btn_landscape.connect("clicked", lambda b: self.set_mode('landscape'))
-        toolbar.append(self.btn_landscape)
+        mode_box.append(self.btn_landscape)
 
         self.btn_auto = Gtk.Button(label="Adaptive")
         self.btn_auto.set_tooltip_text("Selection automatically adapts to each image's orientation (also while browsing)")
         self.btn_auto.connect("clicked", lambda b: self.set_mode('auto'))
-        toolbar.append(self.btn_auto)
+        mode_box.append(self.btn_auto)
 
         self.btn_freehand = Gtk.Button(label="Freehand")
         self.btn_freehand.set_tooltip_text("Freehand – selection is drawn with the mouse (turns off Portrait / Landscape / Auto)")
         self.btn_freehand.connect("clicked", lambda b: self.set_mode('freehand'))
-        toolbar.append(self.btn_freehand)
+        mode_box.append(self.btn_freehand)
 
-        toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        start_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
 
         # Selection size entry fields (px)
         # Enter in the field applies the value; clicking away also confirms it.
@@ -384,7 +409,7 @@ class CropApp(Gtk.ApplicationWindow):
 
         self.entry_w = Gtk.Entry()
         self.entry_w.set_width_chars(5)
-        self.entry_w.set_max_width_chars(7)   # <-- FIX: width cap, field won't grow even with long text
+        self.entry_w.set_max_width_chars(7)   # width cap, field won't grow even with long text
         self.entry_w.set_max_length(7)
         self.entry_w.set_alignment(1.0)
         self.entry_w.set_tooltip_text(
@@ -407,45 +432,39 @@ class CropApp(Gtk.ApplicationWindow):
         self._add_entry_focus_watch(self.entry_h, 'h')
         size_box.append(self.entry_h)
 
-        toolbar.append(size_box)
+        start_box.append(size_box)
 
-        toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        start_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
 
         btn_crop = Gtk.Button(label="Crop")
         btn_crop.set_tooltip_text("Enter – crop and stay | Right-click – crop and go to next")
         btn_crop.add_css_class("suggested-action")
         btn_crop.connect("clicked", lambda b: self.do_crop())
-        toolbar.append(btn_crop)
+        start_box.append(btn_crop)
 
-        # Spacer before the settings/close buttons
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        toolbar.append(spacer)
+        header.pack_start(start_box)
 
-        # About / help button
-        btn_about = Gtk.Button.new_from_icon_name("help-about-symbolic")
-        btn_about.set_tooltip_text("About & keyboard shortcuts")
-        btn_about.connect("clicked", lambda b: self._open_about())
-        toolbar.append(btn_about)
+        # --- End side: primary menu only. Everything else lives in
+        # start_box above, so the header bar's own centering logic pushes
+        # all the slack space in as a single gap right before this menu
+        # button instead of scattering it through the middle. ---
+        menu = Gio.Menu()
+        menu.append("Settings", "win.settings")
+        menu.append("Keyboard Shortcuts", "win.shortcuts")
+        menu.append("About CropFast", "win.about")
+        menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, primary=True)
+        menu_button.set_tooltip_text("Main Menu")
+        header.pack_end(menu_button)
 
-        # Settings button
-        btn_settings = Gtk.Button.new_from_icon_name("emblem-system-symbolic")
-        btn_settings.set_tooltip_text("Settings")
-        btn_settings.connect("clicked", lambda b: self._open_settings())
-        toolbar.append(btn_settings)
+        # --- Content: drawing area wrapped in a toast overlay ---
+        self.toast_overlay = Adw.ToastOverlay()
+        toolbar_view.set_content(self.toast_overlay)
 
-        # Close button
-        btn_close = Gtk.Button(label="✕")
-        btn_close.set_tooltip_text("Close the application (Esc)")
-        btn_close.connect("clicked", lambda b: self.close())
-        toolbar.append(btn_close)
-
-        # Drawing area
         self.area = Gtk.DrawingArea()
         self.area.set_draw_func(self.on_draw)
         self.area.set_hexpand(True)
         self.area.set_vexpand(True)
-        main_box.append(self.area)
+        self.toast_overlay.set_child(self.area)
 
         # 1. Left mouse button (move / drag corners / draw selection)
         click = Gtk.GestureClick.new()
@@ -527,99 +546,45 @@ class CropApp(Gtk.ApplicationWindow):
             self._show_no_images_dialog()
 
     def _show_no_images_dialog(self):
-        dialog = Gtk.Window(transient_for=self, modal=True, title="No Images Found")
-        dialog.set_default_size(340, 0)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        box.set_margin_top(20)
-        box.set_margin_bottom(20)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        dialog.set_child(box)
+        dialog = Adw.AlertDialog(
+            heading="No Images Found",
+            body="No supported images were found there. Try another image or folder.")
+        dialog.add_response("close", "Close")
+        dialog.add_response("retry", "Choose Again…")
+        dialog.set_response_appearance("retry", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("retry")
+        dialog.set_close_response("close")
+        dialog.connect("response", self._on_no_images_response)
+        dialog.present(self)
 
-        label = Gtk.Label(label="No supported images were found there. Try another image or folder.")
-        label.set_wrap(True)
-        label.set_justify(Gtk.Justification.CENTER)
-        box.append(label)
-
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        btn_row.set_halign(Gtk.Align.CENTER)
-        box.append(btn_row)
-
-        btn_retry = Gtk.Button(label="Choose Again…")
-        btn_retry.add_css_class("suggested-action")
-        btn_retry.connect("clicked", lambda b: (dialog.close(), self.open_popover.popup()))
-        btn_row.append(btn_retry)
-
-        btn_close = Gtk.Button(label="Close")
-        btn_close.connect("clicked", lambda b: dialog.close())
-        btn_row.append(btn_close)
-
-        dialog.present()
+    def _on_no_images_response(self, dialog, response):
+        if response == "retry":
+            self.open_popover.popup()
 
     def _show_message_dialog(self, title, message, is_error=False):
         """Generic single-button dialog for errors and info messages,
         so problems are visible in the GUI and not just in the terminal."""
-        dialog = Gtk.Window(transient_for=self, modal=True, title=title)
-        dialog.set_default_size(360, 0)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        box.set_margin_top(20)
-        box.set_margin_bottom(20)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        dialog.set_child(box)
-
-        icon_name = "dialog-error-symbolic" if is_error else "dialog-information-symbolic"
-        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        header.append(Gtk.Image.new_from_icon_name(icon_name))
-        label = Gtk.Label(label=message)
-        label.set_wrap(True)
-        label.set_justify(Gtk.Justification.LEFT)
-        label.set_xalign(0.0)
-        header.append(label)
-        box.append(header)
-
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        btn_row.set_halign(Gtk.Align.END)
-        box.append(btn_row)
-
-        btn_ok = Gtk.Button(label="OK")
-        btn_ok.add_css_class("suggested-action")
-        btn_ok.connect("clicked", lambda b: dialog.close())
-        btn_row.append(btn_ok)
-
-        dialog.present()
+        dialog = Adw.AlertDialog(heading=title, body=message)
+        dialog.add_response("ok", "OK")
+        dialog.set_default_response("ok")
+        dialog.set_close_response("ok")
+        dialog.present(self)
         return False  # for GLib.idle_add
 
     # --- Settings dialog ---
     def _open_settings(self):
         dialog = SettingsDialog(self)
-        dialog.present()
+        dialog.present(self)
 
-    # --- About / keyboard shortcuts ---
-    def _open_about(self):
-        dialog = Gtk.Window(transient_for=self, modal=True, title="About CropFast")
-        dialog.set_default_size(420, 0)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_margin_top(20)
-        box.set_margin_bottom(20)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        dialog.set_child(box)
+    # --- Keyboard shortcuts ---
+    def _open_shortcuts(self):
+        dialog = Adw.Dialog(title="Keyboard Shortcuts", content_width=420)
+        toolbar_view = Adw.ToolbarView()
+        toolbar_view.add_top_bar(Adw.HeaderBar())
 
-        title_label = Gtk.Label(label=f"<b>CropFast</b>  v{APP_VERSION}", use_markup=True)
-        title_label.set_xalign(0.0)
-        box.append(title_label)
-
-        subtitle = Gtk.Label(label="A fast image cropping tool with aspect-ratio presets.")
-        subtitle.set_xalign(0.0)
-        subtitle.set_wrap(True)
-        box.append(subtitle)
-
-        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-
-        shortcuts_title = Gtk.Label(label="<b>Keyboard &amp; mouse shortcuts</b>", use_markup=True)
-        shortcuts_title.set_xalign(0.0)
-        box.append(shortcuts_title)
+        page = Adw.PreferencesPage()
+        group = Adw.PreferencesGroup(title="Keyboard & mouse shortcuts")
+        page.add(group)
 
         shortcuts = [
             ("Ctrl+O", "Open an image or folder"),
@@ -630,22 +595,31 @@ class CropApp(Gtk.ApplicationWindow):
             ("F", "Switch to Freehand mode"),
             ("Esc", "Close the application"),
         ]
-        grid = Gtk.Grid(row_spacing=4, column_spacing=12)
-        for i, (keys, desc) in enumerate(shortcuts):
-            key_label = Gtk.Label(label=keys, halign=Gtk.Align.START)
+        for keys, desc in shortcuts:
+            row = Adw.ActionRow(title=desc)
+            key_label = Gtk.Label(label=keys)
             key_label.add_css_class("dim-label")
-            grid.attach(key_label, 0, i, 1, 1)
-            grid.attach(Gtk.Label(label=desc, halign=Gtk.Align.START), 1, i, 1, 1)
-        box.append(grid)
+            key_label.add_css_class("caption")
+            key_label.set_valign(Gtk.Align.CENTER)
+            row.add_suffix(key_label)
+            group.add(row)
 
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        btn_row.set_halign(Gtk.Align.END)
-        box.append(btn_row)
-        btn_close = Gtk.Button(label="Close")
-        btn_close.connect("clicked", lambda b: dialog.close())
-        btn_row.append(btn_close)
+        toolbar_view.set_content(page)
+        dialog.set_child(toolbar_view)
+        dialog.present(self)
 
-        dialog.present()
+    # --- About ---
+    def _open_about(self):
+        about = Adw.AboutDialog(
+            application_name="CropFast",
+            # NOTE: match this to the application_id set in CropApplication
+            # once you have a proper hicolor/scalable icon installed.
+            application_icon="io.github.example.CropFast",
+            version=APP_VERSION,
+            comments="A fast image cropping tool with aspect-ratio presets.",
+            license_type=Gtk.License.GPL_3_0,
+        )
+        about.present(self)
 
     def refresh_ratio_list(self):
         """Reload the ratio dropdown after settings have changed it."""
@@ -1437,6 +1411,7 @@ class CropApp(Gtk.ApplicationWindow):
                 cropped.savev(str(dest), "webp", ["quality"], ["97"])
 
             print(f"Cropped image saved to: {dest}")
+            self.toast_overlay.add_toast(Adw.Toast(title=f"Saved {dest.name}", timeout=2))
 
             # Auto-advance – ONLY on right mouse click (after a successful save)
             if advance:
@@ -1449,18 +1424,22 @@ class CropApp(Gtk.ApplicationWindow):
                 is_error=True
             )
 
-class CropApplication(Gtk.Application):
+class CropApplication(Adw.Application):
     def __init__(self, initial_path=None):
         # NOTE: change this to your own reverse-domain ID before publishing,
         # e.g. "io.github.<your-username>.CropFast" — it must match the
-        # "Exec"/filename used in the .desktop file for desktop integration.
+        # "Exec"/filename used in the .desktop file for desktop integration,
+        # and the application_icon used in the About dialog.
         super().__init__(application_id="io.github.example.CropFast")
         self.initial_path = initial_path
 
+    def do_startup(self):
+        Adw.Application.do_startup(self)
+        self.set_accels_for_action("win.settings", ["<Primary>comma"])
+        self.set_accels_for_action("win.shortcuts", ["<Primary>question"])
+
     def do_activate(self):
-        settings = Gtk.Settings.get_default()
-        if settings is not None:
-            settings.set_property("gtk-application-prefer-dark-theme", True)
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
         win = CropApp(self, initial_path=self.initial_path)
         win.present()
 
