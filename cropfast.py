@@ -437,7 +437,7 @@ class CropApp(Adw.ApplicationWindow):
         start_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
 
         btn_crop = Gtk.Button(label="Crop")
-        btn_crop.set_tooltip_text("Enter – crop and stay | Right-click – crop and go to next")
+        btn_crop.set_tooltip_text("Space – crop and stay | Right-click – crop and go to next")
         btn_crop.add_css_class("suggested-action")
         btn_crop.connect("clicked", lambda b: self.do_crop())
         start_box.append(btn_crop)
@@ -489,8 +489,11 @@ class CropApp(Adw.ApplicationWindow):
         motion.connect("motion", self.on_motion)
         self.area.add_controller(motion)
 
-        # 5. Keyboard shortcuts (Enter, Esc, F, Left/Right arrows, Ctrl+O)
+        # 5. Keyboard shortcuts (Space, Esc, F, Left/Right arrows, Ctrl+O).
+        # CAPTURE phase so Space crops even when a header button has focus —
+        # no need to manage focus for the crop shortcut.
         key = Gtk.EventControllerKey()
+        key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed", self.on_key)
         self.add_controller(key)
 
@@ -588,7 +591,7 @@ class CropApp(Adw.ApplicationWindow):
 
         shortcuts = [
             ("Ctrl+O", "Open an image or folder"),
-            ("Enter", "Crop and stay on this image"),
+            ("Space", "Crop and stay on this image"),
             ("Right-click on image", "Crop and go to the next image"),
             ("Left / Right arrow", "Previous / next image"),
             ("Mouse wheel", "Previous / next image"),
@@ -1344,6 +1347,7 @@ class CropApp(Adw.ApplicationWindow):
 
         # If a text field has focus, keys belong to it:
         # Enter = apply size ("activate" signal on Entry),
+        # Space = type a space / stay in the field (do not crop),
         # arrows = move the text cursor, Esc = cancel editing
         focus = self.get_focus()
         if isinstance(focus, Gtk.Editable):
@@ -1358,8 +1362,9 @@ class CropApp(Adw.ApplicationWindow):
         if ctrl_pressed and keyval_lower == Gdk.KEY_o:
             self.open_popover.popup()
             return True
-        if keyval_lower in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-            # Enter – crop and STAY on this image
+        if keyval_lower == Gdk.KEY_space:
+            # Space – crop and STAY on this image (Enter is left for the
+            # width/height entry fields to confirm values).
             self.do_crop()
             return True
         if keyval_lower == Gdk.KEY_Escape:
