@@ -63,7 +63,7 @@ Run directly:
 | Shortcut               | Action                              |
 |-------------------------|--------------------------------------|
 | `Ctrl+O`                | Open an image or folder             |
-| `Enter`                 | Crop and stay on this image         |
+| `Space`                 | Crop and stay on this image         |
 | Right-click on image    | Crop and go to the next image       |
 | `←` / `→`                | Previous / next image               |
 | Mouse wheel              | Previous / next image               |
